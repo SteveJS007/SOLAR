@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Planner | V7.1 Fix</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1b1e;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* --- HEADER --- */
+        header {
+            background-color: #25262b;
+            padding: 15px 30px;
+            border-bottom: 1px solid #373a40;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+        }
+        .header-left h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .header-left .subtitle { font-size: 14px; color: #909296; margin-top: 4px; }
+        .header-right { text-align: right; }
+        .clock { font-size: 28px; font-weight: 300; font-variant-numeric: tabular-nums; }
+        .date { font-size: 14px; color: #909296; text-transform: uppercase; }
+
+        /* --- MAIN --- */
+        .main-stage {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px; 
+            width: 100%;
+        }
+        canvas {
+            background-color: #25262b;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 100%; 
+            max-width: 1000px;
+            height: auto; 
+        }
+
+        /* --- FOOTER --- */
+        footer {
+            background-color: #25262b;
+            padding: 15px 10px; 
+            border-top: 1px solid #373a40;
+            display: flex;
+            gap: 10px; 
+            align-items: center;
+            flex-wrap: wrap; 
+        }
+        button {
+            background-color: #373a40;
+            border: none;
+            color: #fff;
+            padding: 10px 15px; 
+            border-radius: 4px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        button:hover { background-color: #4c4f56; }
+        button.primary { background-color: #228be6; }
+        button.primary:hover { background-color: #1c7ed6; }
+        
+        .status-indicator { margin-left: auto; font-size: 12px; color: #909296; display: flex; align-items: center; gap: 8px; }
+        .dot { width: 8px; height: 8px; background: #fa5252; border-radius: 50%; }
+        .dot.online { background: #40c057; box-shadow: 0 0 8px #40c057; }
+
+        /* --- MODAL --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(2px);
+            z-index: 100;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal-card {
+            background: #2c2e33;
+            padding: 20px; 
+            border-radius: 8px;
+            width: 90%; 
+            max-width: 450px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            border: 1px solid #373a40;
+        }
+        .modal-card h2 { margin-top: 0; border-bottom: 1px solid #373a40; padding-bottom: 15px; }
+        
+        .grid-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: 12px; color: #adb5bd; margin-bottom: 5px; text-transform: uppercase; }
+        input, select {
+            width: 100%; background: #1a1b1e; border: 1px solid #373a40;
+            color: #fff; padding: 10px; border-radius: 4px; font-size: 14px; box-sizing: border-box;
+        }
+        input:focus { border-color: #228be6; outline: none; }
+
+        /* --- CHART GUIDE STYLES --- */
+        .help-item { margin-bottom: 20px; border-left: 4px solid #228be6; padding-left: 15px; }
+        .help-item strong { color: #fff; font-size: 1.1em; display:block; margin-bottom: 5px;}
+        .help-item p { margin: 0; font-size: 14px; color: #e0e0e0; line-height: 1.4; }
+        .help-sub { font-weight: bold; }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <h1>SOLAR PLANNER</h1>
+        <div class="subtitle" id="location-display">INITIALIZING...</div>
+    </div>
+    <div class="header-right">
+        <div class="clock" id="clock-display">00:00:00</div>
+        <div class="date" id="date-display">LOADING...</div>
+    </div>
+</header>
+
+<div class="main-stage">
+    <canvas id="mainCanvas" width="1000" height="550"></canvas>
+</div>
+
+<footer>
+    <button type="button" onclick="openConfig()">System Config</button>
+    <button type="button" class="primary" onclick="refreshData()">Run Analysis</button>
+    
+    <button type="button" onclick="openHelp()">Data Guide</button> 
+    
+    <div class="status-indicator">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">STANDBY</span>
+    </div>
+</footer>
+
+<div id="configModal" class="modal-overlay active"> 
+    <div class="modal-card">
+        <h2>Mission Parameters</h2>
+        
+        <div class="grid-row">
+            <div class="form-group">
+                <label style="color:#228be6">OR - Latitude (Manual)</label>
+                <input type="number" id="inp_manual_lat" step="0.0001" placeholder="e.g. 33.66">
+            </div>
+            <div class="form-group">
+                <label style="color:#228be6">OR - Longitude (Manual)</label>
+                <input type="number" id="inp_manual_lon" step="0.0001" placeholder="e.g. -114.23">
+            </div>
+        </div>
+        <div style="text-align:center; margin: -10px 0 10px 0; font-size:12px; color:#adb5bd;">
+            <hr style="border-color: #373a40; margin: 5px 0;">
+            — OR USE —
+        </div>
+
+        <div class="form-group">
+            <label>City / State Name</label>
+            <input type="text" id="inp_city" value="AYR, ON" placeholder="e.g. Moab, UT">
+        </div>
+
+        <div class="grid-row">
+            <div class="form-group">
+                <label>Solar Watts</label>
+                <input type="number" id="inp_watts" value="400">
+            </div>
+            <div class="form-group">
+                <label>Battery Ah</label>
+                <input type="number" id="inp_cap" value="200">
+            </div>
+        </div>
+
+        <div class="grid-row">
+            <div class="form-group">
+                <label>Generator Output (Watts)</label>
+                <input type="number" id="inp_gen_watts" value="2000" placeholder="e.g. 2000">
+            </div>
+            <div class="form-group">
+                <label>Start Charge %</label>
+                <input type="number" id="inp_soc" value="85">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>Daily Load Profile</label>
+            <select id="inp_load">
+                <option value="15">Heavy Work (15A)</option>
+                <option value="5">Living (5A)</option>
+                <option value="2">Storage (2A)</option>
+            </select>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <label style="font-size: 14px; display: flex; align-items: center; color: #fa5252;">
+                <input type="checkbox" id="inp_debug_mode" style="width: auto; margin-right: 8px;">
+                FORCE OFFLINE SIMULATION MODE
+            </label>
+            <p style="font-size: 11px; color:#909296; margin: 5px 0 0 25px;">(Use this if you get blocked after changing locations too quickly)</p>
+        </div>
+        
+        <button type="button" class="primary" style="width:100%; margin-top: 20px;" onclick="saveConfig()">Locate & Initialize</button>
+    </div>
+</div>
+
+<div id="helpModal" class="modal-overlay">
+    <div class="modal-card">
+        <h2>Chart Legend and Analysis Guide</h2>
+        <div class="help-item">
+            <strong>DATA TABLE OVERVIEW</strong>
+            <p>This table shows a full <span class="help-sub">7 days</span> of tactical energy planning data.</p>
+        </div>
+        <div class="help-item">
+            <strong>PROJ. YIELD (Ah)</strong>
+            <p>This is your <span class="help-sub" style="color:#ffc107">DAILY INCOME</span>. It's the total energy (Amp-Hours) your panels are expected to produce from sunrise to sunset.</p>
+        </div>
+        
+        <div class="help-item">
+            <strong>LOAD DEFICIT</strong>
+            <p>This is your <span class="help-sub">NET ENERGY BALANCE</span> (Yield minus your 24-hour Load).</p>
+            <p>— <span class="help-sub" style="color:#40c057">Negative/Green:</span> You generated more power than you spent. **Surplus!**</p>
+            <p>— <span class="help-sub" style="color:#fa5252">Positive/Red:</span> You spent more power than you generated. **Deficit!**</p>
+        </div>
+
+        <div class="help-item">
+            <strong>WEATHER BARS</strong>
+            <p>
+                <span class="help-sub" style="color:#40c057">Green Bar</span> = High Solar Yield (Clear skies).
+                <br><span class="help-sub" style="color:#fa5252">Red Bar</span> = Low Solar Yield (Overcast/Generator day).
+            </p>
+        </div>
+        <button type="button" onclick="closeAll()" class="secondary" style="width:100%">Close Guide</button>
+    </div>
+</div>
+
+<script>
+    // --- TIME ---
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('clock-display').innerText = now.toLocaleTimeString('en-US', {hour12:false});
+        document.getElementById('date-display').innerText = now.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+    }
+    setInterval(updateTime, 1000); updateTime();
+
+    // --- VARS ---
+    let CFG_CITY = "AYR, ON";
+    let CFG_LAT = 43.3407368;
+    let CFG_LON = -80.4263822;
+    let CFG_WATTS = 400;
+    let CFG_BATTERY = 200;
+    let CFG_SOC_START = 170;
+    let CFG_LOAD = 5;
+    let CFG_GEN_WATTS = 2000;
+    let DEBUG_MODE = false; 
+    
+    let dailyForecast = []; 
+    
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- MODAL & UI ---
+    function closeAll() {
+        document.getElementById('configModal').classList.remove('active');
+        document.getElementById('helpModal').classList.remove('active');
+    }
+    function openConfig() { closeAll(); document.getElementById('configModal').classList.add('active'); }
+    function openHelp() { closeAll(); document.getElementById('helpModal').classList.add('active'); }
+    
+    async function saveConfig() {
+        const manualLat = parseFloat(document.getElementById('inp_manual_lat').value);
+        const manualLon = parseFloat(document.getElementById('inp_manual_lon').value);
+        const cityInput = document.getElementById('inp_city').value;
+        
+        // --- CRASH PROTECTION: Enforce Math.max(1, ...) on critical values ---
+        CFG_WATTS = Math.max(1, parseInt(document.getElementById('inp_watts').value) || 400);
+        CFG_BATTERY = Math.max(1, parseInt(document.getElementById('inp_cap').value) || 200);
+        CFG_SOC_START = (parseInt(document.getElementById('inp_soc').value) || 85) / 100 * CFG_BATTERY;
+        CFG_LOAD = parseInt(document.getElementById('inp_load').value) || 5;
+        CFG_GEN_WATTS = parseInt(document.getElementById('inp_gen_watts').value) || 2000;
+        DEBUG_MODE = document.getElementById('inp_debug_mode').checked; 
+        
+        document.getElementById('configModal').classList.remove('active');
+        
+        if (DEBUG_MODE) {
+            document.getElementById('location-display').innerText = "OFFLINE DEBUG MODE";
+            refreshData();
+            return;
+        }
+
+        // --- LOCATION PRIORITY LOGIC ---
+        if (!isNaN(manualLat) && !isNaN(manualLon)) {
+            CFG_LAT = manualLat;
+            CFG_LON = manualLon;
+            CFG_CITY = `Manual Lat: ${manualLat.toFixed(4)}`;
+            document.getElementById('location-display').innerText = `${CFG_CITY.toUpperCase()}`;
+            refreshData();
+            return;
+        }
+        
+        if(cityInput && cityInput !== CFG_CITY) {
+            await geocodeCity(cityInput);
+        } else {
+            refreshData(); 
+        }
+    }
+
+    async function geocodeCity(cityName) {
+        setStatus("LOCATING TARGET...", false);
+        try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if(data && data.length > 0) {
+                CFG_LAT = parseFloat(data[0].lat);
+                CFG_LON = parseFloat(data[0].lon);
+                CFG_CITY = data[0].display_name.split(',')[0]; 
+                document.getElementById('location-display').innerText = CFG_CITY.toUpperCase();
+                refreshData();
+            } else {
+                alert("Location not found. Using last known coordinates.");
+                refreshData();
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Geocoding failed (Network Error).");
+            runSimulationMode(); 
+        }
+    }
+
+    // --- FETCH LOGIC ---
+    function refreshData() {
+        if (DEBUG_MODE) {
+            runSimulationMode();
+            return;
+        }
+
+        fetchAPIs(CFG_LAT, CFG_LON);
+    }
+
+    function setStatus(msg, isOnline) {
+        document.getElementById('status-text').innerText = msg;
+        const dot = document.getElementById('status-dot');
+        dot.className = isOnline ? "dot online" : "dot";
+    }
+
+    async function fetchAPIs(lat, lon) {
+        setStatus("DOWNLOADING DATA...", false);
+        try {
+            // 1. Solar (7 days = 168 hours)
+            const kw = CFG_WATTS / 1000;
+            const solRes = await fetch(`https://api.forecast.solar/estimate/${lat}/${lon}/0/0/${kw}?time=168`); 
+            const solJson = await solRes.json();
+            
+            // 2. Weather (7 days - INCLUDING SUNRISE/SUNSET DAILY AGGREGATIONS)
+            const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=weathercode,cloudcover&daily=sunrise,sunset&forecast_days=7`);
+            const wJson = await wRes.json();
+
+            // --- PROCESS SUCCESSFUL DATA (AGGREGATION) ---
+            const wattsMap = solJson.result.watts;
+            const now = new Date();
+            const weatherTimes = wJson.hourly.time;
+            
+            // Initialize daily totals
+            dailyForecast = []; 
+            let dailyTotalAh = 0;
+            let currentDay = new Date(now).toDateString();
+            
+            // AGGREGATE HOURLY SOLAR DATA
+            for (const [timestamp, watts] of Object.entries(wattsMap)) {
+                const time = new Date(timestamp);
+                
+                if (time < now) continue;
+                
+                const dayStr = time.toDateString();
+                const amps = watts / 13; 
+
+                if (dayStr !== currentDay) {
+                    dailyForecast.push({ date: new Date(currentDay), totalAh: dailyTotalAh.toFixed(1), cloudCover: 0 }); 
+                    dailyTotalAh = 0; 
+                    currentDay = dayStr;
+                }
+                dailyTotalAh += amps;
+            }
+            if (dailyTotalAh > 0) {
+                 dailyForecast.push({ date: new Date(currentDay), totalAh: dailyTotalAh.toFixed(1), cloudCover: 0 });
+            }
+
+
+            // ATTACH WEATHER DATA (Cloud Cover, Sunrise, Sunset)
+            dailyForecast = dailyForecast.slice(0, 7); 
+            for (let i = 0; i < dailyForecast.length; i++) {
+                let targetDate = new Date(dailyForecast[i].date);
+                targetDate.setHours(12, 0, 0, 0); 
+
+                // Find closest index for Noon
+                let closestIndex = 0;
+                let minDiff = Infinity;
+                for(let j=0; j < weatherTimes.length; j++) {
+                    const apiTime = new Date(weatherTimes[j]);
+                    const diff = Math.abs(apiTime - targetDate);
+                    if(diff < minDiff) { minDiff = diff; closestIndex = j; }
+                }
+
+                dailyForecast[i].cloudCover = wJson.hourly.cloudcover[closestIndex] || 0;
+                
+                // Attach Sunrise/Sunset (Daily Aggregation)
+                if (wJson.daily.sunrise[i]) {
+                    const sunriseDate = new Date(wJson.daily.sunrise[i]);
+                    const sunsetDate = new Date(wJson.daily.sunset[i]);
+                    
+                    dailyForecast[i].sunriseTime = sunriseDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    dailyForecast[i].sunsetTime = sunsetDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                }
+            }
+
+            setStatus("ONLINE / ACTIVE", true);
+            drawDashboard();
+
+        } catch (e) {
+            console.error("API Fetch Error:", e);
+            setStatus("API FAILURE - SWITCHING TO SIM", false);
+            runSimulationMode();
+        }
+    }
+
+    function runSimulationMode() {
+        document.getElementById('location-display').innerText = "SIMULATION MODE (OFFLINE)";
+        
+        const watts = CFG_WATTS;
+        const peakAmps = (watts / 13);
+        
+        // Hardcoded 7-Day Simulation Data
+        dailyForecast = [
+            { date: new Date(), totalAh: (peakAmps * 5).toFixed(1), cloudCover: 10, sunriseTime: "6:30 AM", sunsetTime: "5:30 PM" }, 
+            { date: new Date(Date.now() + 86400000), totalAh: (peakAmps * 1.5).toFixed(1), cloudCover: 85, sunriseTime: "6:31 AM", sunsetTime: "5:29 PM" }, 
+            { date: new Date(Date.now() + 172800000), totalAh: (peakAmps * 4).toFixed(1), cloudCover: 30, sunriseTime: "6:32 AM", sunsetTime: "5:28 PM" }, 
+            { date: new Date(Date.now() + 259200000), totalAh: (peakAmps * 6).toFixed(1), cloudCover: 5, sunriseTime: "6:33 AM", sunsetTime: "5:27 PM" },
+            { date: new Date(Date.now() + 345600000), totalAh: (peakAmps * 3).toFixed(1), cloudCover: 60, sunriseTime: "6:34 AM", sunsetTime: "5:26 PM" },
+            { date: new Date(Date.now() + 432000000), totalAh: (peakAmps * 5).toFixed(1), cloudCover: 15, sunriseTime: "6:35 AM", sunsetTime: "5:25 PM" },
+            { date: new Date(Date.now() + 518400000), totalAh: (peakAmps * 2).toFixed(1), cloudCover: 70, sunriseTime: "6:36 AM", sunsetTime: "5:24 PM" }
+        ];
+        drawDashboard();
+    }
+
+    // --- RENDERER ---
+    function drawDashboard() {
+        try {
+            ctx.fillStyle = "#25262b";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const tableX = 50; 
+            let tableY = 80;
+            const col1Width = 100; // Date
+            const col2Width = 100; // Sunrise
+            const col3Width = 100; // Sunset
+            const col4Width = 200; // Status (Reduced size)
+            const col5Width = 180; // Yield
+            const col6Width = 180; // Deficit
+            const rowHeight = 45;
+
+            // Define Column Start Positions (Relative to tableX=50)
+            const col2Start = tableX + col1Width;
+            const col3Start = col2Start + col2Width;
+            const col4Start = col3Start + col3Width;
+            const col5Start = col4Start + col4Width;
+            const col6Start = col5Start + col5Width;
+            
+            // 1. Draw Title
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 24px Arial";
+            ctx.fillText("7-DAY TACTICAL SOLAR FORECAST", tableX, 40);
+
+            // 2. Draw Header Row
+            ctx.fillStyle = "#373a40";
+            ctx.fillRect(tableX, tableY, 950, 30); // Extend box for 6 columns
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 13px Arial";
+            ctx.fillText("DATE", tableX + 5, tableY + 20);
+            ctx.fillText("SUNRISE", col2Start + 5, tableY + 20); 
+            ctx.fillText("SUNSET", col3Start + 5, tableY + 20); 
+            ctx.fillText("STATUS", col4Start + 5, tableY + 20);
+            ctx.fillText("PROJ. YIELD (Ah)", col5Start + 5, tableY + 20);
+            ctx.fillText("LOAD DEFICIT", col6Start + 5, tableY + 20);
+
+            tableY += 30; // Move past header
+
+            // 3. Draw Data Rows
+            let needsGenWarning = false;
+            
+            dailyForecast.forEach((day, index) => {
+                const dateStr = day.date.toLocaleDateString('en-US', { weekday:'short', month:'numeric', day:'numeric' }).toUpperCase();
+                const dailyLoad = CFG_LOAD * 24;
+                const netDeficit = (dailyLoad - parseFloat(day.totalAh)).toFixed(1);
+                
+                // Determine Status Color
+                let barColor;
+                let statusText;
+                if (day.cloudCover > 75) {
+                    barColor = "#fa5252"; 
+                    statusText = "LOW YIELD / OVERCAST";
+                    needsGenWarning = true;
+                } else if (day.cloudCover > 30) {
+                    barColor = "#fcc419"; 
+                    statusText = "VARIABLE / PARTIAL SUN";
+                } else {
+                    barColor = "#40c057"; 
+                    statusText = "HIGH YIELD / CLEAR";
+                }
+
+                // Row Background
+                ctx.fillStyle = index % 2 === 0 ? "#2c2e33" : "#25262b";
+                ctx.fillRect(tableX, tableY, 950, rowHeight);
+
+                // Date
+                ctx.fillStyle = "#fff";
+                ctx.font = "16px Arial";
+                ctx.fillText(dateStr, tableX + 5, tableY + rowHeight / 2 + 5);
+
+                // Sunrise Time (NEW)
+                ctx.fillStyle = "#adb5bd";
+                ctx.fillText(day.sunriseTime || "N/A", col2Start + 5, tableY + rowHeight / 2 + 5); 
+                
+                // Sunset Time (NEW)
+                ctx.fillStyle = "#adb5bd";
+                ctx.fillText(day.sunsetTime || "N/A", col3Start + 5, tableY + rowHeight / 2 + 5); 
+
+                // Status (Colored Text)
+                ctx.fillStyle = barColor;
+                ctx.fillText(statusText, col4Start + 5, tableY + rowHeight / 2 + 5);
+
+                // Projected Yield
+                ctx.fillStyle = "#fff";
+                ctx.fillText(`${day.totalAh} Ah`, col5Start + 5, tableY + rowHeight / 2 + 5);
+
+                // Load Deficit
+                ctx.fillStyle = netDeficit > 0 ? "#fa5252" : "#40c057";
+                ctx.fillText(`${netDeficit} Ah`, col6Start + 5, tableY + rowHeight / 2 + 5);
+
+
+                tableY += rowHeight;
+            });
+
+            // 4. Draw Generator Warning (Below Table)
+            if (needsGenWarning) {
+                const genAmps = CFG_GEN_WATTS / 13;
+                const genRecoveryAh = Math.round(genAmps * 3);
+                
+                ctx.fillStyle = "#ff6666"; 
+                ctx.fillRect(tableX, tableY + 20, 950, 70); 
+                
+                ctx.fillStyle = "#000"; ctx.font = "bold 16px Arial";
+                ctx.fillText("!! GENERATOR PROTOCOL ALERT !!", tableX + 15, tableY + 40);
+                
+                // Line 2
+                ctx.font = "14px Arial";
+                ctx.fillText(`Recommendation: Run generator for 3 hrs on low-yield days.`, tableX + 15, tableY + 60);
+                // Line 3 (Benefit)
+                ctx.fillText(`Total potential recovery: ${genRecoveryAh} Ah.`, tableX + 15, tableY + 80);
+            }
+        } catch (e) {
+            console.error("Renderer Crash:", e);
+            ctx.fillStyle = "#fa5252";
+            ctx.fillRect(50, 150, 900, 100);
+            ctx.fillStyle = "#000";
+            ctx.font = "bold 20px Arial";
+            ctx.fillText("CRITICAL RENDER ERROR. PLEASE CHECK CONSOLE.", 70, 200);
+        }
+    }
+
+    // Init
+    refreshData(); 
+
+</script>
+</body>
+</html>
